@@ -15,11 +15,11 @@ import numpy as np
 from numpy import array
 import pandas as pd
 
-from datetime import datetime
+from datetime import datetime, timedelta
 #from timeframe import Timeframe
 from const import Const as C
 from candle_chart import CandleChart, BandPlot, makeFig, gridFig, Colors
-from time_utils import sliceTime
+from time_utils import TimeUtils
 
 
 POSITIVE = 1 
@@ -72,19 +72,22 @@ def main():
     
     print(len(mid))
     
-    for month in [9, 10]:
-        for day in [1, 31]:
+    for month in range(10, 11):
+        for day in range(2, 31):
             try:
                 tbegin = datetime(2023, month, day)
             except:
                 continue
-            tend = tbegin + datetime.timedelta(days=1)
-            n, begin, end = sliceTime(dic[C.Time], tbegin, tend)
-            if n < 50:
+            tend = tbegin + timedelta(days=1)
+            n, data = TimeUtils.slice(dic, dic[C.TIME], tbegin, tend)
+            if n < 5:
                 continue
             
+            fig, ax = makeFig(1, 1, (15, 10))
+            chart = CandleChart(fig, ax)
+            chart.drawCandle(data[C.TIME], data[C.OPEN], data[C.HIGH], data[C.LOW], data[C.CLOSE])
             
-            
+            pass
     
     
     
