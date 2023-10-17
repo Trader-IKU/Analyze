@@ -39,11 +39,14 @@ def load_data():
     dt = []
     for d, t in zip(date, time):
         s = d + ' ' + t
-        dt.append(datetime.strptime(s, '%Y.%m.%d %H:%M:%S'))
-        
+        t_xm = datetime.strptime(s, '%Y.%m.%d %H:%M:%S')
+        # XM -> JST
+        # jst =  xm + 7hours (winter)
+        # jst = xm + 6hours (summer)
+        t_xm += timedelta(hours=7)
+        dt.append(t_xm)
     dic = {C.TIME: dt, C.OPEN: op, C.HIGH: hi, C.LOW: lo, C.CLOSE: cl}
     return dic
-
 
 def mid_price(dic):
     op = dic[C.HIGH]
@@ -61,31 +64,110 @@ def mid_price(dic):
     dic[C.POLARITY] = pol
     return mid, pol
     
-    
-def moving_average(dic, window):
-    return
+def moving_average(signal, window):
+    n = len(signal)
+    half = int(window / 2)
+    ma = np.full(n, np.nan)
+    for i in range(half, n):
+        right = i + half
+        if i == n - 1:
+            left = i - 1 
+            right = i 
+        elif right >= n:
+            right = n - 1 
+            left = i - (n - i) + 1 
+        else:
+            left = i - half + 1 
+        d = signal[left: right + 1]
+        ma[i] = np.mean(d)
+    return ma
 
-    
+def upper_and_lower(signal, shift_value, is_value_percent=False):
+    n = len(signal)
+    upper = np.full(n, np.nan)
+    lower = np.full(n, np.nan)
+    for i in range(n):
+        if is_value_percent:
+            upper[i] = signal[i] + signal[i] * shift_value / 100 
+            lower[i] = signal[i] - signal[i] * shift_value / 100 
+        else:
+            upper[i] = signal[i] + shift_value 
+            lower[i] = signal[i] - shift_value   
+    return upper, lower
+
+def difference(dic, signal):
+    n = len(signal)
+    plus = np.full(n, 0.0)
+    minus = np.full(n, 0.0)
+    for i, value in enumerate(signal):    
+        if np.isnan(value):
+            continue 
+        plus[i] = dic[C.HIGH] - value
+        minus[i] = value - dic[C.LOW] 
+    return plus, minus
+
+def delta(signal, window):
+    n = len(signal)
+    half = int(window / 2)
+    dlt = np.full(n, 0.0)
+    for i in range(half, n - half):
+        left = signal[i - half]
+        right = signal[i + half]
+        d = (right - left) / left
+        dlt[i] = d
+    return dlt
+        
+def strength(dic, mid, upper, lower, delta):
+    low = dic[C.LOW]
+    high = dic[C.HIGH]
+    streng = []
+    for h, lo, m,  u, l, d in zip(high, low, mid, upper, lower, delta):
+        if d > 0:
+            s = (l - lo) / m 
+        else:
+            s = (u - h) / m 
+        streng.append(s)
+    return streng
+
 def main():
     dic = load_data()
-    mid, pol = mid_price(dic)
-    
-    print(len(mid))
+    mid_price(dic)
     
     for month in range(10, 11):
-        for day in range(2, 31):
+        for day in range(9, 16):
             try:
-                tbegin = datetime(2023, month, day)
+                tbegin = datetime(2023, month, day, 22)
             except:
                 continue
-            tend = tbegin + timedelta(days=1)
+            tend = tbegin + timedelta(hours=6)
             n, data = TimeUtils.slice(dic, dic[C.TIME], tbegin, tend)
             if n < 5:
                 continue
             
-            fig, ax = makeFig(1, 1, (15, 10))
-            chart = CandleChart(fig, ax)
-            chart.drawCandle(data[C.TIME], data[C.OPEN], data[C.HIGH], data[C.LOW], data[C.CLOSE])
+            mid = data[C.MID]
+            polarity = data[C.POLARITY]
+            ma = moving_average(mid, 21)
+            upper, lower = upper_and_lower(ma, 20, is_value_percent=False)
+            dlt = delta(ma, 5)
+            strg = strength(dic, mid, upper, lower, dlt)
+            
+            fig, axes = gridFig([7, 2, 2, 1], (25, 15))
+            
+            chart1 = CandleChart(fig, axes[0], write_time_range=True)
+            chart1.drawCandle(data[C.TIME], data[C.OPEN], data[C.HIGH], data[C.LOW], data[C.CLOSE])
+            chart1.drawLine(data[C.TIME], ma, color='blue')
+            chart1.drawLine(data[C.TIME], upper, color='green')
+            chart1.drawLine(data[C.TIME], lower, color='red')
+            
+            chart2 = CandleChart(fig, axes[1])
+            chart2.drawLine(data[C.TIME], dlt, color='blue')
+            
+            chart3 = CandleChart(fig, axes[2])
+            chart3.drawLine(data[C.TIME], strg, color='blue')
+            
+            chart4 = BandPlot(fig, axes[3])
+            chart4.drawBand(data[C.TIME], polarity, colors=['black', 'green', 'blue'])
+            
             
             pass
     
