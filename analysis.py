@@ -106,16 +106,18 @@ def difference(dic, signal):
         minus[i] = value - dic[C.LOW] 
     return plus, minus
 
-def delta(signal, window):
+def slope(time, signal, window=5, by_percent=True):
     n = len(signal)
-    half = int(window / 2)
-    dlt = np.full(n, 0.0)
-    for i in range(half, n - half):
-        left = signal[i - half]
-        right = signal[i + half]
-        d = (right - left) / left
-        dlt[i] = d
-    return dlt
+    delta = np.full(n, 0.0)
+    for i in range(window - 1, n):
+        y = signal[i - window + 1: i + 1]
+        m, offset = np.polyfit(range(window), np.array(y), 1)
+        dt = time[i] - time[i - window + 1]
+        m /= (dt.total_seconds() / 60)
+        if by_percent:
+            m = m / np.mean(y) * 100.0 
+        delta[i] = m
+    return delta
         
 def strength(dic, mid, upper, lower, delta):
     low = dic[C.LOW]
@@ -129,6 +131,46 @@ def strength(dic, mid, upper, lower, delta):
         streng.append(s)
     return streng
 
+def position(level, value):
+    for i, l in enumerate(level):
+        if value > l:
+            break
+    return i
+
+def band_domain(dic, center, upper, lower):
+    n = len(center)
+    high = dic[C.HIGH]
+    low = dic[C.LOW]
+    mapping = []
+    for h, l, c, lo, up in zip(high, low, center, lower, upper):
+        if np.isnan(c):
+            rates = [0.0, 0.0, 0.0, 0.0]
+            mapping.append(rates)
+            continue
+        levels = [up, c, lo]
+        ih = position(levels, h)
+        il = position(levels, l)
+        height = h - l
+        rates = [0.0, 0.0, 0.0, 0.0]
+        if ih == il:
+            rates[ih] = 1.0
+        else:
+            r = (h - levels[ih]) / height
+            rates[ih] = r
+            r = (levels[il - 1] - l) / height
+            rates[il] = r
+            for i in range(ih + 1, il):
+                r = (levels[i-1] - levels[i]) / height
+                rates[i] = r
+        mapping.append(rates)
+        out = [np.full(n, 0.0) for _ in range(4)]
+        for i, [d1, d2, d3, d4] in enumerate(mapping):
+            out[0][i] = d1
+            out[1][i] = d2
+            out[2][i] = d3
+            out[3][i] = d4
+    return out
+
 def main():
     dic = load_data()
     mid_price(dic)
@@ -139,19 +181,20 @@ def main():
                 tbegin = datetime(2023, month, day, 22)
             except:
                 continue
-            tend = tbegin + timedelta(hours=6)
+            tend = tbegin + timedelta(hours=4)
             n, data = TimeUtils.slice(dic, dic[C.TIME], tbegin, tend)
             if n < 5:
                 continue
             
             mid = data[C.MID]
             polarity = data[C.POLARITY]
-            ma = moving_average(mid, 21)
+            ma = moving_average(mid, 9)
             upper, lower = upper_and_lower(ma, 20, is_value_percent=False)
-            dlt = delta(ma, 5)
-            strg = strength(dic, mid, upper, lower, dlt)
-            
-            fig, axes = gridFig([7, 2, 2, 1], (25, 15))
+            delta = slope(data[C.TIME], ma)
+            strg = strength(dic, mid, upper, lower, delta)            
+            domain = band_domain(dic, mid, upper, lower)
+
+            fig, axes = gridFig([5, 2, 2, 1, 1, 1, 1], (25, 15))
             
             chart1 = CandleChart(fig, axes[0], write_time_range=True)
             chart1.drawCandle(data[C.TIME], data[C.OPEN], data[C.HIGH], data[C.LOW], data[C.CLOSE])
@@ -159,22 +202,21 @@ def main():
             chart1.drawLine(data[C.TIME], upper, color='green')
             chart1.drawLine(data[C.TIME], lower, color='red')
             
-            chart2 = CandleChart(fig, axes[1])
-            chart2.drawLine(data[C.TIME], dlt, color='blue')
+            chart2 = CandleChart(fig, axes[1], comment='delta')
+            chart2.drawLine(data[C.TIME], delta, color='blue')
             
-            chart3 = CandleChart(fig, axes[2])
+            chart3 = CandleChart(fig, axes[2], comment='strength')
             chart3.drawLine(data[C.TIME], strg, color='blue')
             
-            chart4 = BandPlot(fig, axes[3])
-            chart4.drawBand(data[C.TIME], polarity, colors=['black', 'green', 'blue'])
-            
-            
+            chart4 = CandleChart(fig, axes[3])
+            chart4.drawLine(data[C.TIME], domain[0])
+            chart5 = CandleChart(fig, axes[4])
+            chart5.drawLine(data[C.TIME], domain[1])
+            chart6 = CandleChart(fig, axes[5])
+            chart6.drawLine(data[C.TIME], domain[2])
+            chart7 = CandleChart(fig, axes[6])
+            chart7.drawLine(data[C.TIME], domain[3])
             pass
-    
-    
-    
-    
-    
     
 if __name__ == '__main__':
     main()
