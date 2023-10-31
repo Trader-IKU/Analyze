@@ -25,6 +25,16 @@ from time_utils import TimeUtils
 POSITIVE = 1 
 NEGATIVE = -1 
 
+MA = 'ma'
+MA_MULTI = 'ma_multi'
+UPPER = 'upper'
+LOWER = 'lower'
+DELTA = 'delta'
+STRENGTH = 'strength'
+DOMAIN = 'domain'
+U_OVER = 'u_over'
+L_OVER = 'l_over'
+MA_CHANGE = 'ma_change'
 
 def load_data():
     file = './data/US30Cash_M1_202310020100_202310132359.csv'
@@ -81,6 +91,24 @@ def moving_average(signal, window):
         d = signal[left: right + 1]
         ma[i] = np.mean(d)
     return ma
+
+def moving_average_multi(signal, window):
+    n = len(signal)
+    half = int(window / 2)
+    mas = [np.full(n, np.nan) for _ in range(half + 1)]
+    change = np.full(n, np.nan)
+    for i in range(half, n - half):
+        for j in range(half + 1):
+            if j == 0:
+                begin = i - 1 
+                end = i
+            else:
+                begin = i - j 
+                end = i + j 
+            d = signal[begin: end + 1]
+            mas[j][i] = np.mean(d)
+        change[i] = mas[half][i] - mas[0][i]
+    return mas, change
 
 def upper_and_lower(signal, shift_value, is_value_percent=False):
     n = len(signal)
@@ -171,10 +199,44 @@ def band_domain(dic, center, upper, lower):
             out[3][i] = d4
     return out
 
+def upper_over(dic: dict, upper):
+    n = len(upper)
+    high = dic[C.HIGH]
+    out = np.full(n, np.nan)
+    for i in range(n):
+        if high[i] > upper[i]:
+            out[i] = high[i]
+    return out
+
+def lower_over(dic: dict, lower):
+    n = len(lower)
+    low = dic[C.LOW]
+    out = np.full(n, np.nan)
+    for i in range(n):
+        if low[i] < lower[i]:
+            out[i] = low[i]
+    return out
+
+def indicators(dic):
+    mid_price(dic)
+    mid = dic[C.MID]
+    ma = moving_average(mid, 9)
+    dic[MA] = ma
+    upper, lower = upper_and_lower(ma, 20, is_value_percent=False)
+    dic[UPPER] = upper
+    dic[LOWER] = lower
+    dic[U_OVER] = upper_over(dic, upper)
+    dic[L_OVER] = lower_over(dic, lower)
+    delta = slope(dic[C.TIME], ma)
+    dic[DELTA] = delta
+    dic[STRENGTH] = strength(dic, mid, upper, lower, delta)            
+    dic[DOMAIN] = band_domain(dic, mid, upper, lower)
+    mas, change = moving_average_multi(mid, 9)
+    dic[MA_MULTI] = mas
+    dic[MA_CHANGE] = change    
+
 def main():
     dic = load_data()
-    mid_price(dic)
-    
     for month in range(10, 11):
         for day in range(9, 16):
             try:
@@ -186,36 +248,26 @@ def main():
             if n < 5:
                 continue
             
+            indicators(data)
             mid = data[C.MID]
             polarity = data[C.POLARITY]
-            ma = moving_average(mid, 9)
-            upper, lower = upper_and_lower(ma, 20, is_value_percent=False)
-            delta = slope(data[C.TIME], ma)
-            strg = strength(dic, mid, upper, lower, delta)            
-            domain = band_domain(dic, mid, upper, lower)
-
-            fig, axes = gridFig([5, 2, 2, 1, 1, 1, 1], (25, 15))
-            
+    
+            fig, axes = gridFig([2, 2, 1], (25, 15))
+            time = data[C.TIME]
             chart1 = CandleChart(fig, axes[0], write_time_range=True)
-            chart1.drawCandle(data[C.TIME], data[C.OPEN], data[C.HIGH], data[C.LOW], data[C.CLOSE])
-            chart1.drawLine(data[C.TIME], ma, color='blue')
-            chart1.drawLine(data[C.TIME], upper, color='green')
-            chart1.drawLine(data[C.TIME], lower, color='red')
+            chart1.drawCandle(time, data[C.OPEN], data[C.HIGH], data[C.LOW], data[C.CLOSE])
+            chart1.drawLine(time, data[MA], color='blue')
+            chart1.drawLine(time, data[U_OVER], color='green')
+            chart1.drawLine(time, data[L_OVER], color='red')
             
-            chart2 = CandleChart(fig, axes[1], comment='delta')
-            chart2.drawLine(data[C.TIME], delta, color='blue')
+            chart2 = CandleChart(fig, axes[1], comment='MA_MULTI')
+            ma_multi = data[MA_MULTI]
+            for ma in ma_multi:
+                chart2.drawLine(time, ma, color='yellow')
             
             chart3 = CandleChart(fig, axes[2], comment='strength')
-            chart3.drawLine(data[C.TIME], strg, color='blue')
+            chart3.drawLine(time, data[MA_CHANGE], color='blue')
             
-            chart4 = CandleChart(fig, axes[3])
-            chart4.drawLine(data[C.TIME], domain[0])
-            chart5 = CandleChart(fig, axes[4])
-            chart5.drawLine(data[C.TIME], domain[1])
-            chart6 = CandleChart(fig, axes[5])
-            chart6.drawLine(data[C.TIME], domain[2])
-            chart7 = CandleChart(fig, axes[6])
-            chart7.drawLine(data[C.TIME], domain[3])
             pass
     
 if __name__ == '__main__':
